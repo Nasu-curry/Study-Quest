@@ -48,16 +48,20 @@ const expOf=s=>{const a=agg()[s.id];return Math.max(0,Math.floor(a.sec/60)+a.bon
 const totExp=()=>S.skills.reduce((t,s)=>t+expOf(s),0);
 const need=L=>Math.ceil(S.settings.curve.base+S.settings.curve.slope*L);
 const rankOf=lv=>{let r=S.settings.ranks[0].name;S.settings.ranks.forEach(x=>{if(lv>=x.min)r=x.name});return r};
-function lvOf(exp){let lv=1,r=exp,n=need(1);while(r>=n){r-=n;lv++;n=need(lv)}return{lv,cur:r,need:n,exp,pct:r/n*100,rank:rankOf(lv)}}
-function snap(){const o={t:lvOf(totExp()),s:{}};S.skills.forEach(s=>o.s[s.id]=lvOf(expOf(s)));return o}
+function lvOf(exp){let lv=1,r=exp,n=need(1);while(r>=n){r-=n;lv++;n=need(lv)}const rank=rankOf(lv);return{lv,cur:r,need:n,exp,pct:r/n*100,rank,tier:rank}}
+/* スキル専用レベル（総合とは独立）: Lv.Lに必要な累計EXP = 30×L×(L−1) */
+const SKR=['未経験','初級','下級','中級','上級','熟練','精鋭','達人','至高','極致'];
+const skRank=L=>L<=10?SKR[L-1]:`極致+${L-10}`;
+function skLv(exp){let L=Math.max(1,Math.floor((1+Math.sqrt(1+4*exp/30))/2));while(L>1&&30*L*(L-1)>exp)L--;while(30*(L+1)*L<=exp)L++;const b=30*L*(L-1),n=60*L;return{lv:L,cur:exp-b,need:n,exp,pct:(exp-b)/n*100,rank:skRank(L),tier:Math.min(L,10)}}
+function snap(){const o={t:lvOf(totExp()),s:{}};S.skills.forEach(s=>o.s[s.id]=skLv(expOf(s)));return o}
 const sk=id=>S.skills.find(s=>s.id===id),cat=id=>S.cats.find(c=>c.id===id);
 const sorted=()=>[...S.logs].reverse().sort((a,b)=>b.date.localeCompare(a.date));
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('on'),3200)}
 
 /* ---------- 部品 ---------- */
 const gauge=(key,x)=>{const pv=PREV[key];return `<div class="gauge"><i data-k="${key}" data-p="${x.pct}" data-lv="${x.lv}" style="width:${pv&&pv.lv===x.lv?pv.p:0}%"></i></div>`};
-const lvBlock=(key,exp,label,big)=>{const x=lvOf(exp);return `<div class="lb">${label?`<div class="lbl">${label}</div>`:''}<div class="lv"><b class="${big?'big':''}">Lv.${x.lv}</b><span class="rk">${esc(x.rank)}</span></div>${gauge(key,x)}<div class="meta"><span>レベル内 ${x.cur} / ${x.need} EXP（あと ${x.need-x.cur}）</span><span>累計 ${exp} EXP</span></div></div>`};
-const skCard=s=>`<a class="card" href="#skill/${s.id}"><div class="top"><b>${esc(s.name)}</b><small>${esc(cat(s.cat)?.name||'')}</small></div>${lvBlock('s:'+s.id,expOf(s))}</a>`;
+const lvBlock=(key,exp,label,big,fn=lvOf)=>{const x=fn(exp);return `<div class="lb">${label?`<div class="lbl">${label}</div>`:''}<div class="lv"><b class="${big?'big':''}">Lv.${x.lv}</b><span class="rk">${esc(x.rank)}</span></div>${gauge(key,x)}<div class="meta"><span>レベル内 ${x.cur} / ${x.need} EXP（あと ${x.need-x.cur}）</span><span>累計 ${exp} EXP</span></div></div>`};
+const skCard=s=>`<a class="card" href="#skill/${s.id}"><div class="top"><b>${esc(s.name)}</b><small>${esc(cat(s.cat)?.name||'')}</small></div>${lvBlock('s:'+s.id,expOf(s),'',0,skLv)}</a>`;
 const logRow=(l,ed)=>{const s=sk(l.skill),ty={study:'学習',manual:'手動',note:'記録'}[l.type];return `<li><span class="d">${l.date}</span><span class="t">${ty}</span><b>${esc(s?.name||'?')}</b><span>${esc(l.note)}</span><span class="x">${l.type==='study'?`${fmt(l.sec)}${l.q?`／${l.q}問`:''}${l.bonus?`（旧EXP補正 ${l.bonus>0?'+':''}${l.bonus}）`:''}`:l.type==='manual'?`${l.bonus>0?'+':''}${l.bonus} EXP`:''}</span>${ed?`<span class="acts">${l.type==='study'?`<button data-a="editLog" data-id="${l.id}">編集</button>`:''}<button data-a="delLog" data-id="${l.id}">削除</button></span>`:''}</li>`};
 const nf=()=>'<p class="muted">見つかりません。<a href="#home">ホームへ戻る</a></p>';
 const logList=(L,ed)=>L.length?`<ul class="logs">${L.map(l=>logRow(l,ed)).join('')}</ul>`:'<p class="muted">履歴はまだありません。</p>';
@@ -71,9 +75,9 @@ return `<section class="panel prof"><div class="top"><div><h1>${esc(S.profile.na
 function catsv(){return `<section class="panel"><h2>カテゴリー<button data-a="addCat">カテゴリーを追加</button></h2>${S.cats.length?`<div class="grid">${S.cats.map(c=>{const ss=S.skills.filter(s=>s.cat===c.id);return `<a class="card" href="#cat/${c.id}"><b>${esc(c.name)}</b><br><small>${ss.length} スキル ／ 累計 ${ss.reduce((a,s)=>a+expOf(s),0)} EXP</small></a>`}).join('')}</div>`:'<p class="muted">カテゴリーがありません。「カテゴリーを追加」から科目を作成してください。</p>'}</section>`}
 function catv(id){const c=cat(id);if(!c)return nf();const ss=S.skills.filter(s=>s.cat===id);
 return `<section class="panel"><a href="#cats">← カテゴリー一覧</a><h2>${esc(c.name)}<span><button data-a="addSkill" data-id="${id}">スキルを追加</button><button data-a="editCat" data-id="${id}">名称変更</button><button class="danger" data-a="delCat" data-id="${id}">削除</button></span></h2>${ss.length?`<div class="grid">${ss.map(s=>`<div>${skCard(s)}<div class="acts"><button data-a="editSkill" data-id="${s.id}">編集</button><button class="danger" data-a="delSkill" data-id="${s.id}">削除</button></div></div>`).join('')}</div>`:'<p class="muted">スキルがありません。「スキルを追加」から作成してください。</p>'}</section>`}
-function skillv(id){const s=sk(id);if(!s)return nf();const a=agg()[id],x=lvOf(expOf(s));
-return `<section class="panel"><a href="#cat/${s.cat}">← ${esc(cat(s.cat)?.name||'')}</a><h1>${esc(s.name)}</h1>${s.desc?`<p class="muted">${esc(s.desc)}</p>`:''}${lvBlock('s:'+id,expOf(s),'',1)}<div class="stats sm"><div><small>学習時間</small><b>${fmt(a.sec)}</b></div><div><small>学習日数</small><b>${a.days.size}日</b></div><div><small>問題数</small><b>${a.q}</b></div></div><div class="acts"><a class="btn pri" href="#log/${id}">学習を記録</a><button data-a="adjust" data-id="${id}">EXP加減算</button><button data-a="editSkill" data-id="${id}">編集</button><button class="danger" data-a="delSkill" data-id="${id}">削除</button></div></section>
-<section class="panel"><h2>ランク一覧</h2><ul class="ranks">${S.settings.ranks.map(r=>`<li class="${r.name===x.rank?'cur':''}"><span>Lv.${r.min}〜</span>${esc(r.name)}</li>`).join('')}</ul></section>
+function skillv(id){const s=sk(id);if(!s)return nf();const a=agg()[id],x=skLv(expOf(s));
+return `<section class="panel"><a href="#cat/${s.cat}">← ${esc(cat(s.cat)?.name||'')}</a><h1>${esc(s.name)}</h1>${s.desc?`<p class="muted">${esc(s.desc)}</p>`:''}${lvBlock('s:'+id,expOf(s),'',1,skLv)}<div class="stats sm"><div><small>学習時間</small><b>${fmt(a.sec)}</b></div><div><small>学習日数</small><b>${a.days.size}日</b></div><div><small>問題数</small><b>${a.q}</b></div></div><div class="acts"><a class="btn pri" href="#log/${id}">学習を記録</a><button data-a="adjust" data-id="${id}">EXP加減算</button><button data-a="editSkill" data-id="${id}">編集</button><button class="danger" data-a="delSkill" data-id="${id}">削除</button></div></section>
+<section class="panel"><h2>スキルランク一覧</h2><ul class="ranks">${SKR.map((n,i)=>`<li class="${Math.min(x.lv,10)===i+1?'cur':''}"><span>Lv.${i+1}</span>${n}<small>（累計 ${30*(i+1)*i} EXP〜）</small></li>`).join('')}<li class="${x.lv>10?'cur':''}"><span>Lv.11〜</span>極致+1、極致+2 …</li></ul></section>
 <section class="panel"><h2>学習履歴</h2>${logList(sorted().filter(l=>l.skill===id),1)}</section>`}
 function logv(pre){if(!S.skills.length)return '<section class="panel"><p class="muted">先にカテゴリーとスキルを追加してください。<a href="#cats">カテゴリーへ</a></p></section>';
 return `<section class="panel"><h2>学習を記録</h2><form id="logf" class="form"><label>スキル<select name="skill">${S.skills.map(s=>`<option value="${s.id}" ${s.id===pre?'selected':''}>${esc(cat(s.cat)?.name)} / ${esc(s.name)}</option>`).join('')}</select></label><label>日付<input type="date" name="date" value="${today()}" required></label><div class="two"><label>学習時間（分）<input type="number" name="mi" min="0" step="1" value="0"></label><label>秒<input type="number" name="se" min="0" step="1" value="0"></label></div><label>解いた問題数（記録のみ・EXPには影響しません）<input type="number" name="q" min="0" step="1" value="0"></label><label>メモ<input name="note"></label><p class="calc" id="gain"></p><button class="pri">記録を保存</button></form></section><section class="panel"><h2>過去の記録</h2>${logList(sorted(),1)}</section>`}
@@ -88,7 +92,7 @@ function modal(t,fs,ok){const o=$('#modal');o.innerHTML=`<div class="box"><h3>${
  o.classList.add('on');const f=$('form',o),close=()=>o.classList.remove('on');$('#mx',o).onclick=close;f.onsubmit=e=>{e.preventDefault();e.stopPropagation();const v=Object.fromEntries(new FormData(f));close();ok(v)};$('input,select,textarea',f).focus()}
 function fx(b,a){const ev=[],chk=(n,x,y)=>{if(y&&x&&y.lv>x.lv)ev.push({n,x,y})};chk('総合',b.t,a.t);S.skills.forEach(s=>chk(s.name,b.s[s.id],a.s[s.id]));
  if(!ev.length){const g=a.t.exp-b.t.exp;if(g>0)toast(`+${g} EXP`);return}
- const rk=ev.some(e=>e.x.rank!==e.y.rank),o=$('#fx');
+ const rk=ev.some(e=>e.x.tier!==e.y.tier),o=$('#fx');
  const lines=ev.map(e=>`<div class="ev"><b>${esc(e.n)}</b>　Lv.${e.x.lv} → <b>Lv.${e.y.lv}</b>（+${e.y.lv-e.x.lv}）${e.x.rank!==e.y.rank?`<em>${esc(e.x.rank)} → ${esc(e.y.rank)}</em>`:''}<small>獲得 ${e.y.exp-e.x.exp} EXP ／ 累計 ${e.y.exp} EXP</small></div>`).join('');
  o.className=rk?'rank':'lvl';o.innerHTML=(rk?'<div class="ring"></div><div class="ring r2"></div>':'')+`<div class="fxbox"><div class="cap">${rk?'RANK UP':'LEVEL UP'}</div>${lines}<button id="fxc" class="${rk?'pri':''}">閉じる</button></div>`;
  clearTimeout(fx.t);if(!rk)fx.t=setTimeout(()=>{o.className=''},9000)}
@@ -101,7 +105,7 @@ function saveSet(f){const rk=[];for(const ln of f.ranks.value.split('\n').filter
  if(!rk.length||rk[0].min!==1||rk.some((r,i)=>i&&r.min<=rk[i-1].min))return toast('最初のランクはLv.1から、以降は昇順（重複なし）で指定してください');
  const h=Math.min(50,Math.max(1,Math.floor(+f.hl.value)||8));commit(()=>{S.settings.ranks=rk;S.ui.homeLogs=h});toast('設定を保存しました')}
 function exportData(){const t=totExp(),x=lvOf(t),d=new Date(),p=n=>String(n).padStart(2,'0'),stamp=`${today().replace(/-/g,'')}_${p(d.getHours())}${p(d.getMinutes())}`;
- const out={app:'STUDY_QUEST',version:VER,savedAt:d.toISOString(),summary:{playerName:S.profile.name,totalLevel:x.lv,totalRank:x.rank,totalExp:t,totalStudySeconds:S.logs.reduce((a,l)=>a+(l.sec||0),0),skills:S.skills.map(s=>{const e=expOf(s),y=lvOf(e);return{name:s.name,exp:e,level:y.lv,rank:y.rank,studySeconds:agg()[s.id].sec}})},data:S};
+ const out={app:'STUDY_QUEST',version:VER,savedAt:d.toISOString(),summary:{playerName:S.profile.name,totalLevel:x.lv,totalRank:x.rank,totalExp:t,totalStudySeconds:S.logs.reduce((a,l)=>a+(l.sec||0),0),skills:S.skills.map(s=>{const e=expOf(s),y=skLv(e);return{name:s.name,exp:e,level:y.lv,rank:y.rank,studySeconds:agg()[s.id].sec}})},data:S};
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:'application/json'}));a.download=`STUDY_QUEST_save_${stamp}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('セーブデータを書き出しました')}
 function importData(file){if(file.size>5e6)return toast('ファイルが大きすぎます（5MBまで）');const fr=new FileReader();fr.onerror=()=>toast('ファイルを読み込めませんでした');
  fr.onload=()=>{let n;try{n=normalize(JSON.parse(fr.result))}catch(e){return toast('読み込めません：'+(e instanceof SyntaxError?'JSONとして解析できません':e.message)+'（現在のデータは変更されていません）')}
